@@ -26,12 +26,21 @@ class mysql::server::service {
     }
   }
 
-  service { 'mysqld':
-    ensure   => $service_ensure,
-    name     => $mysql::server::service_name,
-    enable   => $mysql::server::real_service_enabled,
-    provider => $mysql::server::service_provider,
-    require  => Package['mysql-server'],
+  if $mysql::server::real_service_manage {
+    service { 'mysqld':
+      ensure   => $service_ensure,
+      name     => $mysql::server::service_name,
+      enable   => $mysql::server::real_service_enabled,
+      provider => $mysql::server::service_provider,
+    }
+  }
+
+  # only establish ordering between service and package if
+  # we're managing the package.
+  if $mysql::server::package_manage {
+    Service['mysqld'] {
+      require  => Package['mysql-server'],
+    }
   }
 
   # only establish ordering between config file and service if
@@ -40,4 +49,18 @@ class mysql::server::service {
     File['mysql-config-file'] -> Service['mysqld']
   }
 
+  if $mysql::server::override_options and $mysql::server::override_options['mysqld'] and $mysql::server::override_options['mysqld']['socket'] {
+    $mysqlsocket = $mysql::server::override_options['mysqld']['socket']
+  } else {
+    $mysqlsocket = $options['mysqld']['socket']
+  }
+
+  exec { 'wait_for_mysql_socket_to_open':
+    command   => "test -S ${mysqlsocket}",
+    unless    => "test -S ${mysqlsocket}",
+    tries     => '3',
+    try_sleep => '10',
+    require   => Service['mysqld'],
+    path      => '/bin:/usr/bin',
+  }
 }
